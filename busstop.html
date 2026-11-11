@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TTC Parkside & Algonquin Clock</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0b0f19;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 100vh;
+      padding: 1.5rem;
+      user-select: none;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #1f293d;
+      padding-bottom: 1rem;
+    }
+    .stop-info h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+    .stop-info p {
+      font-size: 1.1rem;
+      color: #94a3b8;
+      margin-top: 0.2rem;
+    }
+    .weather {
+      text-align: right;
+    }
+    .temp {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: #38bdf8;
+    }
+    .weather-sub {
+      font-size: 1rem;
+      color: #94a3b8;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    .primary-arrival {
+      font-size: 6rem;
+      font-weight: 900;
+      line-height: 1;
+      color: #22c55e;
+      letter-spacing: -2px;
+    }
+    .primary-arrival.urgent { 
+      color: #f59e0b; 
+    }
+    .primary-unit {
+      font-size: 1.4rem;
+      color: #94a3b8;
+      font-weight: 600;
+      margin-top: 0.4rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .subsequent-arrivals {
+      display: flex;
+      gap: 1.2rem;
+      margin-top: 1.5rem;
+      font-size: 1.3rem;
+      color: #cbd5e1;
+      background: #162032;
+      padding: 0.6rem 1.4rem;
+      border-radius: 999px;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      color: #475569;
+      font-size: 0.95rem;
+      padding-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="stop-info">
+      <h1>80 Queensway</h1>
+      <p>Parkside Dr at Algonquin Ave (Stop #11774)</p>
+    </div>
+    <div class="weather">
+      <div id="temperature" class="temp">--°C</div>
+      <div id="weather-desc" class="weather-sub">High Park Weather</div>
+    </div>
+  </header>
+
+  <main>
+    <div id="countdown" class="primary-arrival">--</div>
+    <div id="unit-label" class="primary-unit">Minutes Until Next Bus</div>
+    <div id="next-arrivals" class="subsequent-arrivals">Following buses: --</div>
+  </main>
+
+  <footer>
+    <span id="clock">--:--</span>
+    <span id="last-updated">Updating live data...</span>
+  </footer>
+
+  <script>
+    // 1. Live Local Time Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // 2. Fetch Open-Meteo Temperature (High Park / Parkside coordinates)
+    async function updateWeather() {
+      try {
+        const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=43.645&longitude=-79.462&current=temperature_2m,apparent_temperature");
+        const data = await res.json();
+        const currentTemp = Math.round(data.current.temperature_2m);
+        const feelsLike = Math.round(data.current.apparent_temperature);
+        document.getElementById('temperature').textContent = `${currentTemp}°C`;
+        document.getElementById('weather-desc').textContent = `Feels like ${feelsLike}°C`;
+      } catch (err) {
+        document.getElementById('temperature').textContent = '--°C';
+      }
+    }
+
+    // 3. Fetch Live TTC Arrivals from UmoIQ / NextBus feed
+    async function updateTTC() {
+      const stopId = "11774"; // Parkside Dr at Algonquin Ave
+      const countdownEl = document.getElementById('countdown');
+      const unitEl = document.getElementById('unit-label');
+      const nextEl = document.getElementById('next-arrivals');
+      const updateEl = document.getElementById('last-updated');
+
+      try {
+        const url = `https://retro.umoiq.com/service/publicJSONFeed?command=predictions&a=ttc&stopId=${stopId}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        let predictions = [];
+        if (data.predictions && data.predictions.direction) {
+          const dir = data.predictions.direction;
+          const predList = Array.isArray(dir) ? dir[0].prediction : dir.prediction;
+          if (Array.isArray(predList)) {
+            predictions = predList.map(p => parseInt(p.minutes, 10));
+          } else if (predList) {
+            predictions = [parseInt(predList.minutes, 10)];
+          }
+        }
+
+        if (predictions.length > 0) {
+          const first = predictions[0];
+          countdownEl.textContent = first;
+          countdownEl.className = 'primary-arrival' + (first <= 3 ? ' urgent' : '');
+          unitEl.textContent = first === 1 ? 'Minute Until Next Bus' : 'Minutes Until Next Bus';
+
+          if (predictions.length > 1) {
+            nextEl.style.display = 'block';
+            nextEl.textContent = `Following buses in: ${predictions.slice(1).map(m => m + ' min').join(', ')}`;
+          } else {
+            nextEl.style.display = 'none';
+          }
+        } else {
+          countdownEl.textContent = 'No Bus';
+          unitEl.textContent = 'No upcoming arrivals scheduled';
+          nextEl.style.display = 'none';
+        }
+
+        const now = new Date();
+        updateEl.textContent = `Sync: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      } catch (err) {
+        countdownEl.textContent = 'Err';
+        unitEl.textContent = 'Check Network Connection';
+      }
+    }
+
+    // Polling Intervals
+    updateWeather();
+    updateTTC();
+    setInterval(updateWeather, 10 * 60 * 1000); // Check temperature every 10 mins
+    setInterval(updateTTC, 30 * 1000);          // Check bus arrivals every 30 secs
+  </script>
+</body>
+</html>
