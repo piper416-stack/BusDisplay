@@ -97,7 +97,7 @@
       border-top: 2px solid #1f293d;
       padding-top: 0.5rem;
       margin-bottom: 0.35rem;
-      height: 4.5rem; /* Strictly locked to 2 rows high */
+      height: 4.5rem;
       overflow: hidden;
       position: relative;
     }
@@ -267,7 +267,7 @@
       }
     }
 
-    // 4. Calendar Fetching & Smooth 2-Row Auto-Scroll
+    // 4. Calendar Fetching with Multi-Proxy Fallback & Smooth 2-Row Scroll
     let scrollTimer = null;
     let totalEvents = 0;
     let currentIndex = 0;
@@ -278,16 +278,42 @@
       currentIndex = 0;
       track.style.transform = 'translateY(0rem)';
 
-      if (totalEvents <= 2) return; // No scrolling needed if 2 or fewer events
+      if (totalEvents <= 2) return;
 
       scrollTimer = setInterval(() => {
-        currentIndex += 2; // Advance by 2 events at a time
+        currentIndex += 2;
         if (currentIndex >= totalEvents) {
           currentIndex = 0;
         }
-        // Each .cal-item is 2rem tall
         track.style.transform = `translateY(-${currentIndex * 2}rem)`;
-      }, 5000); // Scroll every 5 seconds
+      }, 5000);
+    }
+
+    async function fetchIcsWithFallback(icsUrl) {
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(icsUrl)}`,
+        `https://corsproxy.io/?url=${encodeURIComponent(icsUrl)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(icsUrl)}`
+      ];
+
+      let lastError = 'All proxies failed';
+      for (const proxyUrl of proxies) {
+        try {
+          const res = await fetch(proxyUrl);
+          if (!res.ok) {
+            lastError = `HTTP ${res.status}`;
+            continue;
+          }
+          const text = await res.text();
+          if (text && text.includes('BEGIN:VCALENDAR')) {
+            return text;
+          }
+          lastError = 'Invalid ICS response';
+        } catch (e) {
+          lastError = e.message || 'Network error';
+        }
+      }
+      throw new Error(lastError);
     }
 
     async function updateCalendar() {
@@ -307,14 +333,12 @@
 
       const urls = icalRaw.split(',').map(u => u.trim()).filter(Boolean);
       const now = new Date();
-      const horizon = new Date(now.getTime() + 48 * 60 * 60 * 1000); // Next 48 hours
+      const horizon = new Date(now.getTime() + 48 * 60 * 60 * 1000);
       let upcoming = [];
 
       try {
         for (const icsUrl of urls) {
-          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(icsUrl)}`;
-          const res = await fetch(proxyUrl);
-          const text = await res.text();
+          const text = await fetchIcsWithFallback(icsUrl);
           const jcalData = ICAL.parse(text);
           const comp = new ICAL.Component(jcalData);
           const vevents = comp.getAllSubcomponents('vevent');
@@ -343,7 +367,7 @@
         }
 
         upcoming.sort((a, b) => a.start - b.start);
-        const eventsToShow = upcoming.slice(0, 10); // Keep up to 10 upcoming events in rotation
+        const eventsToShow = upcoming.slice(0, 10);
         totalEvents = eventsToShow.length;
 
         if (totalEvents === 0) {
@@ -355,7 +379,6 @@
           return;
         }
 
-        // Pad with an empty row if odd number > 2 so the final page still aligns cleanly
         const renderedItems = eventsToShow.map(ev => {
           const isToday = ev.start.toDateString() === now.toDateString();
           const dayPrefix = isToday ? '' : ev.start.toLocaleDateString([], { weekday: 'short' }) + ' ';
@@ -381,7 +404,7 @@
         calTrack.innerHTML = `
           <div class="cal-item">
             <span class="cal-time">CAL ERR</span>
-            <span class="cal-title">Unable to load calendar feed</span>
+            <span class="cal-title">Feed error (${err.message}) — check Secret ICS URL</span>
           </div>`;
       }
     }
@@ -390,9 +413,9 @@
     updateWeather();
     updateTTC();
     updateCalendar();
-    setInterval(updateWeather, 10 * 60 * 1000);  // Weather every 10 mins
-    setInterval(updateTTC, 30 * 1000);           // TTC arrivals every 30 secs
-    setInterval(updateCalendar, 15 * 60 * 1000); // Calendar every 15 mins
+    setInterval(updateWeather, 10 * 60 * 1000);
+    setInterval(updateTTC, 30 * 1000);
+    setInterval(updateCalendar, 15 * 60 * 1000);
   </script>
 </body>
 </html>
