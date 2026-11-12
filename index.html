@@ -14,7 +14,7 @@
       flex-direction: column;
       justify-content: space-between;
       height: 100vh;
-      padding: 1.2rem 1.8rem;
+      padding: 0.9rem 1.5rem;
       user-select: none;
       overflow: hidden;
     }
@@ -23,18 +23,18 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 2px solid #1f293d;
-      padding-bottom: 0.8rem;
+      padding-bottom: 0.6rem;
     }
     .stop-info h1 {
-      font-size: 2.1rem;
+      font-size: 2rem;
       font-weight: 700;
       color: #f8fafc;
       line-height: 1.1;
     }
     .stop-info p {
-      font-size: 1.05rem;
+      font-size: 1rem;
       color: #94a3b8;
-      margin-top: 0.25rem;
+      margin-top: 0.2rem;
     }
     .weather {
       display: flex;
@@ -43,19 +43,19 @@
       text-align: right;
     }
     .weather-icon {
-      font-size: 3.6rem;
+      font-size: 5.4rem;
       line-height: 1;
     }
     .temp {
-      font-size: 3.8rem;
+      font-size: 7.6rem;
       font-weight: 800;
       color: #38bdf8;
-      line-height: 1;
+      line-height: 0.9;
     }
     .weather-sub {
-      font-size: 1.1rem;
+      font-size: 1.05rem;
       color: #94a3b8;
-      margin-top: 0.2rem;
+      margin-top: 0.25rem;
     }
     main {
       flex: 1;
@@ -65,38 +65,38 @@
       align-items: center;
     }
     .primary-arrival {
-      font-size: 8.5rem;
+      font-size: 17rem;
       font-weight: 900;
-      line-height: 0.95;
+      line-height: 0.85;
       color: #22c55e;
-      letter-spacing: -3px;
+      letter-spacing: -6px;
     }
     .primary-arrival.urgent { 
       color: #f59e0b; 
     }
     .primary-unit {
-      font-size: 1.5rem;
+      font-size: 1.35rem;
       color: #94a3b8;
       font-weight: 600;
-      margin-top: 0.5rem;
+      margin-top: 0.4rem;
       text-transform: uppercase;
       letter-spacing: 2px;
     }
     .subsequent-arrivals {
       display: flex;
       gap: 1.2rem;
-      margin-top: 1.2rem;
-      font-size: 1.35rem;
+      margin-top: 0.8rem;
+      font-size: 1.25rem;
       color: #cbd5e1;
       background: #162032;
-      padding: 0.5rem 1.4rem;
+      padding: 0.4rem 1.3rem;
       border-radius: 999px;
     }
     footer {
       display: flex;
       justify-content: space-between;
       color: #475569;
-      font-size: 1rem;
+      font-size: 0.95rem;
     }
   </style>
 </head>
@@ -148,6 +148,85 @@
       if ([95, 96, 99].includes(code)) return { icon: '⛈️', label: 'Thunderstorm' };
       return { icon: '🌡️', label: 'High Park' };
     }
+
+    // 2. Fetch Open-Meteo Temperature & Weather Condition
+    async function updateWeather() {
+      try {
+        const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=43.645&longitude=-79.462&current=temperature_2m,apparent_temperature,weather_code,is_day");
+        const data = await res.json();
+        const currentTemp = Math.round(data.current.temperature_2m);
+        const feelsLike = Math.round(data.current.apparent_temperature);
+        const weatherCode = data.current.weather_code;
+        const isDay = data.current.is_day === 1;
+
+        const visuals = getWeatherVisuals(weatherCode, isDay);
+
+        document.getElementById('weather-icon').textContent = visuals.icon;
+        document.getElementById('temperature').textContent = `${currentTemp}°C`;
+        document.getElementById('weather-desc').textContent = `${visuals.label} • Feels ${feelsLike}°`;
+      } catch (err) {
+        document.getElementById('temperature').textContent = '--°C';
+      }
+    }
+
+    // 3. Fetch Live TTC Arrivals from UmoIQ / NextBus feed
+    async function updateTTC() {
+      const stopId = "11774"; // Parkside Dr at Algonquin Ave
+      const countdownEl = document.getElementById('countdown');
+      const unitEl = document.getElementById('unit-label');
+      const nextEl = document.getElementById('next-arrivals');
+      const updateEl = document.getElementById('last-updated');
+
+      try {
+        const url = `https://retro.umoiq.com/service/publicJSONFeed?command=predictions&a=ttc&stopId=${stopId}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        let predictions = [];
+        if (data.predictions && data.predictions.direction) {
+          const dir = data.predictions.direction;
+          const predList = Array.isArray(dir) ? dir[0].prediction : dir.prediction;
+          if (Array.isArray(predList)) {
+            predictions = predList.map(p => parseInt(p.minutes, 10));
+          } else if (predList) {
+            predictions = [parseInt(predList.minutes, 10)];
+          }
+        }
+
+        if (predictions.length > 0) {
+          const first = predictions[0];
+          countdownEl.textContent = first;
+          countdownEl.className = 'primary-arrival' + (first <= 3 ? ' urgent' : '');
+          unitEl.textContent = first === 1 ? 'Minute Until Next Bus' : 'Minutes Until Next Bus';
+
+          if (predictions.length > 1) {
+            nextEl.style.display = 'block';
+            nextEl.textContent = `Following buses in: ${predictions.slice(1).map(m => m + ' min').join(', ')}`;
+          } else {
+            nextEl.style.display = 'none';
+          }
+        } else {
+          countdownEl.textContent = 'No Bus';
+          unitEl.textContent = 'No upcoming arrivals scheduled';
+          nextEl.style.display = 'none';
+        }
+
+        const now = new Date();
+        updateEl.textContent = `Sync: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+      } catch (err) {
+        countdownEl.textContent = 'Err';
+        unitEl.textContent = 'Check Network Connection';
+      }
+    }
+
+    // Polling Intervals
+    updateWeather();
+    updateTTC();
+    setInterval(updateWeather, 10 * 60 * 1000); // Check weather every 10 mins
+    setInterval(updateTTC, 30 * 1000);          // Check bus arrivals every 30 secs
+  </script>
+</body>
+</html>
 
     // 2. Fetch Open-Meteo Temperature & Weather Condition
     async function updateWeather() {
