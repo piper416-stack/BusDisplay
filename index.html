@@ -14,37 +14,48 @@
       flex-direction: column;
       justify-content: space-between;
       height: 100vh;
-      padding: 1.5rem;
+      padding: 1.2rem 1.8rem;
       user-select: none;
+      overflow: hidden;
     }
     header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
       border-bottom: 2px solid #1f293d;
-      padding-bottom: 1rem;
+      padding-bottom: 0.8rem;
     }
     .stop-info h1 {
-      font-size: 2rem;
+      font-size: 2.1rem;
       font-weight: 700;
       color: #f8fafc;
+      line-height: 1.1;
     }
     .stop-info p {
+      font-size: 1.05rem;
+      color: #94a3b8;
+      margin-top: 0.25rem;
+    }
+    .weather {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      text-align: right;
+    }
+    .weather-icon {
+      font-size: 3.6rem;
+      line-height: 1;
+    }
+    .temp {
+      font-size: 3.8rem;
+      font-weight: 800;
+      color: #38bdf8;
+      line-height: 1;
+    }
+    .weather-sub {
       font-size: 1.1rem;
       color: #94a3b8;
       margin-top: 0.2rem;
-    }
-    .weather {
-      text-align: right;
-    }
-    .temp {
-      font-size: 2.5rem;
-      font-weight: 800;
-      color: #38bdf8;
-    }
-    .weather-sub {
-      font-size: 1rem;
-      color: #94a3b8;
     }
     main {
       flex: 1;
@@ -54,39 +65,38 @@
       align-items: center;
     }
     .primary-arrival {
-      font-size: 6rem;
+      font-size: 8.5rem;
       font-weight: 900;
-      line-height: 1;
+      line-height: 0.95;
       color: #22c55e;
-      letter-spacing: -2px;
+      letter-spacing: -3px;
     }
     .primary-arrival.urgent { 
       color: #f59e0b; 
     }
     .primary-unit {
-      font-size: 1.4rem;
+      font-size: 1.5rem;
       color: #94a3b8;
       font-weight: 600;
-      margin-top: 0.4rem;
+      margin-top: 0.5rem;
       text-transform: uppercase;
       letter-spacing: 2px;
     }
     .subsequent-arrivals {
       display: flex;
       gap: 1.2rem;
-      margin-top: 1.5rem;
-      font-size: 1.3rem;
+      margin-top: 1.2rem;
+      font-size: 1.35rem;
       color: #cbd5e1;
       background: #162032;
-      padding: 0.6rem 1.4rem;
+      padding: 0.5rem 1.4rem;
       border-radius: 999px;
     }
     footer {
       display: flex;
       justify-content: space-between;
       color: #475569;
-      font-size: 0.95rem;
-      padding-top: 0.5rem;
+      font-size: 1rem;
     }
   </style>
 </head>
@@ -98,8 +108,11 @@
       <p>Parkside Dr at Algonquin Ave (Stop #11774)</p>
     </div>
     <div class="weather">
-      <div id="temperature" class="temp">--°C</div>
-      <div id="weather-desc" class="weather-sub">High Park Weather</div>
+      <div id="weather-icon" class="weather-icon">⛅</div>
+      <div>
+        <div id="temperature" class="temp">--°C</div>
+        <div id="weather-desc" class="weather-sub">High Park</div>
+      </div>
     </div>
   </header>
 
@@ -123,15 +136,34 @@
     setInterval(updateClock, 1000);
     updateClock();
 
-    // 2. Fetch Open-Meteo Temperature (High Park / Parkside coordinates)
+    // Map WMO Weather Codes to clear icons and labels
+    function getWeatherVisuals(code, isDay) {
+      if (code === 0) return { icon: isDay ? '☀️' : '🌙', label: 'Clear' };
+      if (code === 1 || code === 2) return { icon: isDay ? '🌤️' : '☁️', label: 'Partly Cloudy' };
+      if (code === 3) return { icon: '☁️', label: 'Overcast' };
+      if (code === 45 || code === 48) return { icon: '🌫️', label: 'Fog' };
+      if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(code)) return { icon: '🌧️', label: 'Rain' };
+      if ([56, 57, 66, 67].includes(code)) return { icon: '🌨️', label: 'Freezing Rain' };
+      if ([71, 73, 75, 77, 85, 86].includes(code)) return { icon: '❄️', label: 'Snow' };
+      if ([95, 96, 99].includes(code)) return { icon: '⛈️', label: 'Thunderstorm' };
+      return { icon: '🌡️', label: 'High Park' };
+    }
+
+    // 2. Fetch Open-Meteo Temperature & Weather Condition
     async function updateWeather() {
       try {
-        const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=43.645&longitude=-79.462&current=temperature_2m,apparent_temperature");
+        const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=43.645&longitude=-79.462&current=temperature_2m,apparent_temperature,weather_code,is_day");
         const data = await res.json();
         const currentTemp = Math.round(data.current.temperature_2m);
         const feelsLike = Math.round(data.current.apparent_temperature);
+        const weatherCode = data.current.weather_code;
+        const isDay = data.current.is_day === 1;
+
+        const visuals = getWeatherVisuals(weatherCode, isDay);
+
+        document.getElementById('weather-icon').textContent = visuals.icon;
         document.getElementById('temperature').textContent = `${currentTemp}°C`;
-        document.getElementById('weather-desc').textContent = `Feels like ${feelsLike}°C`;
+        document.getElementById('weather-desc').textContent = `${visuals.label} • Feels ${feelsLike}°`;
       } catch (err) {
         document.getElementById('temperature').textContent = '--°C';
       }
@@ -190,7 +222,7 @@
     // Polling Intervals
     updateWeather();
     updateTTC();
-    setInterval(updateWeather, 10 * 60 * 1000); // Check temperature every 10 mins
+    setInterval(updateWeather, 10 * 60 * 1000); // Check weather every 10 mins
     setInterval(updateTTC, 30 * 1000);          // Check bus arrivals every 30 secs
   </script>
 </body>
