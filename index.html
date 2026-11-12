@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TTC Parkside & Algonquin Clock</title>
-  <script src="https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -267,7 +266,7 @@
       }
     }
 
-    // 4. Calendar Fetching with Multi-Proxy Fallback & Smooth 2-Row Scroll
+    // 4. Calendar Fetching from Google Apps Script Web App (#cal=...)
     let scrollTimer = null;
     let totalEvents = 0;
     let currentIndex = 0;
@@ -289,86 +288,26 @@
       }, 5000);
     }
 
-    async function fetchIcsWithFallback(icsUrl) {
-      const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(icsUrl)}`,
-        `https://corsproxy.io/?url=${encodeURIComponent(icsUrl)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(icsUrl)}`
-      ];
-
-      let lastError = 'All proxies failed';
-      for (const proxyUrl of proxies) {
-        try {
-          const res = await fetch(proxyUrl);
-          if (!res.ok) {
-            lastError = `HTTP ${res.status}`;
-            continue;
-          }
-          const text = await res.text();
-          if (text && text.includes('BEGIN:VCALENDAR')) {
-            return text;
-          }
-          lastError = 'Invalid ICS response';
-        } catch (e) {
-          lastError = e.message || 'Network error';
-        }
-      }
-      throw new Error(lastError);
-    }
-
     async function updateCalendar() {
       const calTrack = document.getElementById('calendar-track');
       const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const icalRaw = hashParams.get('ical');
+      const calUrl = hashParams.get('cal') || hashParams.get('ical');
 
-      if (!icalRaw) {
+      if (!calUrl) {
         totalEvents = 0;
         calTrack.innerHTML = `
           <div class="cal-item">
             <span class="cal-time">SETUP</span>
-            <span class="cal-title">Append #ical=YOUR_SECRET_ICS_URL to Start URL</span>
+            <span class="cal-title">Append #cal=YOUR_APPS_SCRIPT_URL to Start URL</span>
           </div>`;
         return;
       }
 
-      const urls = icalRaw.split(',').map(u => u.trim()).filter(Boolean);
-      const now = new Date();
-      const horizon = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-      let upcoming = [];
-
       try {
-        for (const icsUrl of urls) {
-          const text = await fetchIcsWithFallback(icsUrl);
-          const jcalData = ICAL.parse(text);
-          const comp = new ICAL.Component(jcalData);
-          const vevents = comp.getAllSubcomponents('vevent');
-
-          for (const vevent of vevents) {
-            const event = new ICAL.Event(vevent);
-            if (event.isRecurring()) {
-              const expand = event.iterator();
-              let next;
-              let safety = 0;
-              while ((next = expand.next()) && safety++ < 500) {
-                const start = next.toJSDate();
-                const end = new Date(start.getTime() + event.duration.toSeconds() * 1000);
-                if (end < now) continue;
-                if (start > horizon) break;
-                upcoming.push({ title: event.summary, start, end, isAllDay: event.startDate.isDate });
-              }
-            } else {
-              const start = event.startDate.toJSDate();
-              const end = event.endDate.toJSDate();
-              if (end >= now && start <= horizon) {
-                upcoming.push({ title: event.summary, start, end, isAllDay: event.startDate.isDate });
-              }
-            }
-          }
-        }
-
-        upcoming.sort((a, b) => a.start - b.start);
-        const eventsToShow = upcoming.slice(0, 10);
-        totalEvents = eventsToShow.length;
+        const res = await fetch(calUrl);
+        const events = await res.json();
+        const now = new Date();
+        totalEvents = events.length;
 
         if (totalEvents === 0) {
           calTrack.innerHTML = `
@@ -379,12 +318,13 @@
           return;
         }
 
-        const renderedItems = eventsToShow.map(ev => {
-          const isToday = ev.start.toDateString() === now.toDateString();
-          const dayPrefix = isToday ? '' : ev.start.toLocaleDateString([], { weekday: 'short' }) + ' ';
+        const renderedItems = events.map(ev => {
+          const start = new Date(ev.start);
+          const isToday = start.toDateString() === now.toDateString();
+          const dayPrefix = isToday ? '' : start.toLocaleDateString([], { weekday: 'short' }) + ' ';
           const timeStr = ev.isAllDay
             ? `${dayPrefix}All Day`
-            : `${dayPrefix}${ev.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+            : `${dayPrefix}${start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
           return `
             <div class="cal-item">
               <span class="cal-time">${timeStr}</span>
@@ -404,7 +344,7 @@
         calTrack.innerHTML = `
           <div class="cal-item">
             <span class="cal-time">CAL ERR</span>
-            <span class="cal-title">Feed error (${err.message}) — check Secret ICS URL</span>
+            <span class="cal-title">Unable to reach Apps Script (${err.message})</span>
           </div>`;
       }
     }
@@ -415,7 +355,7 @@
     updateCalendar();
     setInterval(updateWeather, 10 * 60 * 1000);
     setInterval(updateTTC, 30 * 1000);
-    setInterval(updateCalendar, 15 * 60 * 1000);
+    setInterval(updateCalendar, 10 * 60 * 1000);
   </script>
 </body>
 </html>
