@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TTC Parkside & Algonquin Clock</title>
+  <script src="https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -14,7 +15,7 @@
       flex-direction: column;
       justify-content: space-between;
       height: 100vh;
-      padding: 0.9rem 1.5rem;
+      padding: 0.8rem 1.5rem;
       user-select: none;
       overflow: hidden;
     }
@@ -23,39 +24,39 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 2px solid #1f293d;
-      padding-bottom: 0.6rem;
+      padding-bottom: 0.5rem;
     }
     .stop-info h1 {
-      font-size: 2rem;
+      font-size: 1.9rem;
       font-weight: 700;
       color: #f8fafc;
       line-height: 1.1;
     }
     .stop-info p {
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: #94a3b8;
       margin-top: 0.2rem;
     }
     .weather {
       display: flex;
       align-items: center;
-      gap: 0.8rem;
+      gap: 0.7rem;
       text-align: right;
     }
     .weather-icon {
-      font-size: 5.4rem;
+      font-size: 4.8rem;
       line-height: 1;
     }
     .temp {
-      font-size: 7.6rem;
+      font-size: 6.8rem;
       font-weight: 800;
       color: #38bdf8;
       line-height: 0.9;
     }
     .weather-sub {
-      font-size: 1.05rem;
+      font-size: 1rem;
       color: #94a3b8;
-      margin-top: 0.25rem;
+      margin-top: 0.2rem;
     }
     main {
       flex: 1;
@@ -65,38 +66,76 @@
       align-items: center;
     }
     .primary-arrival {
-      font-size: 17rem;
+      font-size: 14rem;
       font-weight: 900;
       line-height: 0.85;
       color: #22c55e;
-      letter-spacing: -6px;
+      letter-spacing: -5px;
     }
     .primary-arrival.urgent { 
       color: #f59e0b; 
     }
     .primary-unit {
-      font-size: 1.35rem;
+      font-size: 1.25rem;
       color: #94a3b8;
       font-weight: 600;
-      margin-top: 0.4rem;
+      margin-top: 0.35rem;
       text-transform: uppercase;
       letter-spacing: 2px;
     }
     .subsequent-arrivals {
       display: flex;
-      gap: 1.2rem;
-      margin-top: 0.8rem;
-      font-size: 1.25rem;
+      gap: 1rem;
+      margin-top: 0.6rem;
+      font-size: 1.15rem;
       color: #cbd5e1;
       background: #162032;
-      padding: 0.4rem 1.3rem;
+      padding: 0.35rem 1.2rem;
       border-radius: 999px;
+    }
+    .calendar-wrapper {
+      border-top: 2px solid #1f293d;
+      padding-top: 0.5rem;
+      margin-bottom: 0.35rem;
+      height: 4.5rem; /* Strictly locked to 2 rows high */
+      overflow: hidden;
+      position: relative;
+    }
+    .calendar-track {
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+    }
+    .cal-item {
+      height: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cal-time {
+      background: #1e293b;
+      color: #38bdf8;
+      font-weight: 700;
+      padding: 0.12rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .cal-title {
+      color: #f1f5f9;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     footer {
       display: flex;
       justify-content: space-between;
       color: #475569;
-      font-size: 0.95rem;
+      font-size: 0.9rem;
     }
   </style>
 </head>
@@ -121,6 +160,15 @@
     <div id="unit-label" class="primary-unit">Minutes Until Next Bus</div>
     <div id="next-arrivals" class="subsequent-arrivals">Following buses: --</div>
   </main>
+
+  <section class="calendar-wrapper">
+    <div id="calendar-track" class="calendar-track">
+      <div class="cal-item">
+        <span class="cal-time">CALENDAR</span>
+        <span class="cal-title">Loading upcoming schedule...</span>
+      </div>
+    </div>
+  </section>
 
   <footer>
     <span id="clock">--:--</span>
@@ -171,7 +219,7 @@
 
     // 3. Fetch Live TTC Arrivals from UmoIQ / NextBus feed
     async function updateTTC() {
-      const stopId = "11774"; // Parkside Dr at Algonquin Ave
+      const stopId = "11774";
       const countdownEl = document.getElementById('countdown');
       const unitEl = document.getElementById('unit-label');
       const nextEl = document.getElementById('next-arrivals');
@@ -219,90 +267,132 @@
       }
     }
 
-    // Polling Intervals
-    updateWeather();
-    updateTTC();
-    setInterval(updateWeather, 10 * 60 * 1000); // Check weather every 10 mins
-    setInterval(updateTTC, 30 * 1000);          // Check bus arrivals every 30 secs
-  </script>
-</body>
-</html>
+    // 4. Calendar Fetching & Smooth 2-Row Auto-Scroll
+    let scrollTimer = null;
+    let totalEvents = 0;
+    let currentIndex = 0;
 
-    // 2. Fetch Open-Meteo Temperature & Weather Condition
-    async function updateWeather() {
-      try {
-        const res = await fetch("https://api.open-meteo.com/v1/forecast?latitude=43.645&longitude=-79.462&current=temperature_2m,apparent_temperature,weather_code,is_day");
-        const data = await res.json();
-        const currentTemp = Math.round(data.current.temperature_2m);
-        const feelsLike = Math.round(data.current.apparent_temperature);
-        const weatherCode = data.current.weather_code;
-        const isDay = data.current.is_day === 1;
+    function startCalendarScroll() {
+      if (scrollTimer) clearInterval(scrollTimer);
+      const track = document.getElementById('calendar-track');
+      currentIndex = 0;
+      track.style.transform = 'translateY(0rem)';
 
-        const visuals = getWeatherVisuals(weatherCode, isDay);
+      if (totalEvents <= 2) return; // No scrolling needed if 2 or fewer events
 
-        document.getElementById('weather-icon').textContent = visuals.icon;
-        document.getElementById('temperature').textContent = `${currentTemp}°C`;
-        document.getElementById('weather-desc').textContent = `${visuals.label} • Feels ${feelsLike}°`;
-      } catch (err) {
-        document.getElementById('temperature').textContent = '--°C';
-      }
+      scrollTimer = setInterval(() => {
+        currentIndex += 2; // Advance by 2 events at a time
+        if (currentIndex >= totalEvents) {
+          currentIndex = 0;
+        }
+        // Each .cal-item is 2rem tall
+        track.style.transform = `translateY(-${currentIndex * 2}rem)`;
+      }, 5000); // Scroll every 5 seconds
     }
 
-    // 3. Fetch Live TTC Arrivals from UmoIQ / NextBus feed
-    async function updateTTC() {
-      const stopId = "11774"; // Parkside Dr at Algonquin Ave
-      const countdownEl = document.getElementById('countdown');
-      const unitEl = document.getElementById('unit-label');
-      const nextEl = document.getElementById('next-arrivals');
-      const updateEl = document.getElementById('last-updated');
+    async function updateCalendar() {
+      const calTrack = document.getElementById('calendar-track');
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const icalRaw = hashParams.get('ical');
+
+      if (!icalRaw) {
+        totalEvents = 0;
+        calTrack.innerHTML = `
+          <div class="cal-item">
+            <span class="cal-time">SETUP</span>
+            <span class="cal-title">Append #ical=YOUR_SECRET_ICS_URL to Start URL</span>
+          </div>`;
+        return;
+      }
+
+      const urls = icalRaw.split(',').map(u => u.trim()).filter(Boolean);
+      const now = new Date();
+      const horizon = new Date(now.getTime() + 48 * 60 * 60 * 1000); // Next 48 hours
+      let upcoming = [];
 
       try {
-        const url = `https://retro.umoiq.com/service/publicJSONFeed?command=predictions&a=ttc&stopId=${stopId}`;
-        const res = await fetch(url);
-        const data = await res.json();
+        for (const icsUrl of urls) {
+          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(icsUrl)}`;
+          const res = await fetch(proxyUrl);
+          const text = await res.text();
+          const jcalData = ICAL.parse(text);
+          const comp = new ICAL.Component(jcalData);
+          const vevents = comp.getAllSubcomponents('vevent');
 
-        let predictions = [];
-        if (data.predictions && data.predictions.direction) {
-          const dir = data.predictions.direction;
-          const predList = Array.isArray(dir) ? dir[0].prediction : dir.prediction;
-          if (Array.isArray(predList)) {
-            predictions = predList.map(p => parseInt(p.minutes, 10));
-          } else if (predList) {
-            predictions = [parseInt(predList.minutes, 10)];
+          for (const vevent of vevents) {
+            const event = new ICAL.Event(vevent);
+            if (event.isRecurring()) {
+              const expand = event.iterator();
+              let next;
+              let safety = 0;
+              while ((next = expand.next()) && safety++ < 500) {
+                const start = next.toJSDate();
+                const end = new Date(start.getTime() + event.duration.toSeconds() * 1000);
+                if (end < now) continue;
+                if (start > horizon) break;
+                upcoming.push({ title: event.summary, start, end, isAllDay: event.startDate.isDate });
+              }
+            } else {
+              const start = event.startDate.toJSDate();
+              const end = event.endDate.toJSDate();
+              if (end >= now && start <= horizon) {
+                upcoming.push({ title: event.summary, start, end, isAllDay: event.startDate.isDate });
+              }
+            }
           }
         }
 
-        if (predictions.length > 0) {
-          const first = predictions[0];
-          countdownEl.textContent = first;
-          countdownEl.className = 'primary-arrival' + (first <= 3 ? ' urgent' : '');
-          unitEl.textContent = first === 1 ? 'Minute Until Next Bus' : 'Minutes Until Next Bus';
+        upcoming.sort((a, b) => a.start - b.start);
+        const eventsToShow = upcoming.slice(0, 10); // Keep up to 10 upcoming events in rotation
+        totalEvents = eventsToShow.length;
 
-          if (predictions.length > 1) {
-            nextEl.style.display = 'block';
-            nextEl.textContent = `Following buses in: ${predictions.slice(1).map(m => m + ' min').join(', ')}`;
-          } else {
-            nextEl.style.display = 'none';
-          }
-        } else {
-          countdownEl.textContent = 'No Bus';
-          unitEl.textContent = 'No upcoming arrivals scheduled';
-          nextEl.style.display = 'none';
+        if (totalEvents === 0) {
+          calTrack.innerHTML = `
+            <div class="cal-item">
+              <span class="cal-time">CLEAR</span>
+              <span class="cal-title">No upcoming events in the next 48 hours</span>
+            </div>`;
+          return;
         }
 
-        const now = new Date();
-        updateEl.textContent = `Sync: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        // Pad with an empty row if odd number > 2 so the final page still aligns cleanly
+        const renderedItems = eventsToShow.map(ev => {
+          const isToday = ev.start.toDateString() === now.toDateString();
+          const dayPrefix = isToday ? '' : ev.start.toLocaleDateString([], { weekday: 'short' }) + ' ';
+          const timeStr = ev.isAllDay
+            ? `${dayPrefix}All Day`
+            : `${dayPrefix}${ev.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+          return `
+            <div class="cal-item">
+              <span class="cal-time">${timeStr}</span>
+              <span class="cal-title">${ev.title || '(Busy)'}</span>
+            </div>`;
+        });
+
+        if (totalEvents > 2 && totalEvents % 2 !== 0) {
+          renderedItems.push(`<div class="cal-item"></div>`);
+        }
+
+        calTrack.innerHTML = renderedItems.join('');
+        startCalendarScroll();
+
       } catch (err) {
-        countdownEl.textContent = 'Err';
-        unitEl.textContent = 'Check Network Connection';
+        totalEvents = 0;
+        calTrack.innerHTML = `
+          <div class="cal-item">
+            <span class="cal-time">CAL ERR</span>
+            <span class="cal-title">Unable to load calendar feed</span>
+          </div>`;
       }
     }
 
     // Polling Intervals
     updateWeather();
     updateTTC();
-    setInterval(updateWeather, 10 * 60 * 1000); // Check weather every 10 mins
-    setInterval(updateTTC, 30 * 1000);          // Check bus arrivals every 30 secs
+    updateCalendar();
+    setInterval(updateWeather, 10 * 60 * 1000);  // Weather every 10 mins
+    setInterval(updateTTC, 30 * 1000);           // TTC arrivals every 30 secs
+    setInterval(updateCalendar, 15 * 60 * 1000); // Calendar every 15 mins
   </script>
 </body>
 </html>
