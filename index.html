@@ -14,7 +14,7 @@
       flex-direction: column;
       justify-content: space-between;
       height: 100vh;
-      padding: 0.6rem 1.4rem;
+      padding: 0.5rem 1.4rem;
       user-select: none;
       overflow: hidden;
     }
@@ -23,18 +23,14 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 2px solid #1f293d;
-      padding-bottom: 0.4rem;
+      padding-bottom: 0.35rem;
     }
-    .stop-info h1 {
-      font-size: 1.85rem;
-      font-weight: 700;
+    .clock-header h1 {
+      font-size: 4.2rem;
+      font-weight: 800;
       color: #ffffff;
-      line-height: 1.1;
-    }
-    .stop-info p {
-      font-size: 0.95rem;
-      color: #cbd5e1;
-      margin-top: 0.15rem;
+      line-height: 0.9;
+      letter-spacing: -1.5px;
     }
     .weather {
       display: flex;
@@ -43,17 +39,17 @@
       text-align: right;
     }
     .weather-icon {
-      font-size: 4.5rem;
+      font-size: 4.2rem;
       line-height: 1;
     }
     .temp {
-      font-size: 6.4rem;
+      font-size: 5.8rem;
       font-weight: 800;
       color: #7dd3fc;
       line-height: 0.9;
     }
     .weather-sub {
-      font-size: 1rem;
+      font-size: 0.95rem;
       color: #cbd5e1;
       margin-top: 0.15rem;
     }
@@ -66,12 +62,12 @@
       min-height: 0;
     }
     .primary-arrival {
-      font-size: 12.5rem;
+      font-size: 15rem; /* 20% taller than 12.5rem */
       font-weight: 900;
       line-height: 0.85;
       color: #4ade80;
       text-shadow: 0 0 24px rgba(74, 222, 128, 0.35);
-      letter-spacing: -5px;
+      letter-spacing: -6px;
       opacity: 1;
     }
     .primary-arrival.urgent { 
@@ -79,28 +75,27 @@
       text-shadow: 0 0 24px rgba(251, 191, 36, 0.4);
     }
     .primary-unit {
-      font-size: 1.15rem;
-      color: #cbd5e1;
-      font-weight: 600;
+      font-size: 1.55rem;
+      color: #f8fafc;
+      font-weight: 700;
       margin-top: 0.25rem;
-      text-transform: uppercase;
-      letter-spacing: 2px;
+      letter-spacing: 0.5px;
     }
     .subsequent-arrivals {
       display: flex;
       gap: 1rem;
-      margin-top: 0.45rem;
-      font-size: 1.1rem;
+      margin-top: 0.4rem;
+      font-size: 1.05rem;
       color: #f1f5f9;
       background: #162032;
-      padding: 0.28rem 1.1rem;
+      padding: 0.25rem 1.05rem;
       border-radius: 999px;
     }
     .calendar-wrapper {
       border-top: 2px solid #1f293d;
-      padding-top: 0.4rem;
-      margin-bottom: 0.25rem;
-      height: 7.1rem; /* Locked to 2 rows at doubled font height */
+      padding-top: 0.35rem;
+      margin-bottom: 0.2rem;
+      height: 7rem;
       overflow: hidden;
       position: relative;
       flex-shrink: 0;
@@ -115,7 +110,7 @@
       display: flex;
       align-items: center;
       gap: 0.9rem;
-      font-size: 2.2rem; /* Doubled from 1.1rem */
+      font-size: 2.2rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -126,7 +121,7 @@
       font-weight: 700;
       padding: 0.15rem 0.75rem;
       border-radius: 8px;
-      font-size: 1.85rem; /* Doubled from 0.95rem */
+      font-size: 1.85rem;
       flex-shrink: 0;
       line-height: 1.15;
     }
@@ -139,7 +134,7 @@
     }
     footer {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       color: #64748b;
       font-size: 0.85rem;
       flex-shrink: 0;
@@ -149,9 +144,8 @@
 <body>
 
   <header>
-    <div class="stop-info">
-      <h1>80 Queensway</h1>
-      <p>Parkside Dr at Algonquin Ave (Stop #11774)</p>
+    <div class="clock-header">
+      <h1 id="clock">--:--</h1>
     </div>
     <div class="weather">
       <div id="weather-icon" class="weather-icon">⛅</div>
@@ -164,8 +158,8 @@
 
   <main>
     <div id="countdown" class="primary-arrival">--</div>
-    <div id="unit-label" class="primary-unit">Minutes Until Next Bus</div>
-    <div id="next-arrivals" class="subsequent-arrivals">Following buses: --</div>
+    <div id="unit-label" class="primary-unit">-- mins (--:--)</div>
+    <div id="next-arrivals" class="subsequent-arrivals">Following: --</div>
   </main>
 
   <section class="calendar-wrapper">
@@ -178,7 +172,6 @@
   </section>
 
   <footer>
-    <span id="clock">--:--</span>
     <span id="last-updated">Updating live data...</span>
   </footer>
 
@@ -186,10 +179,17 @@
     // 1. Live Local Time Clock
     function updateClock() {
       const now = new Date();
-      document.getElementById('clock').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '');
+      document.getElementById('clock').textContent = timeStr;
     }
     setInterval(updateClock, 1000);
     updateClock();
+
+    // Format ETA clock time from minutes offset (e.g., "9:13")
+    function formatEtaClock(minutesFromNow) {
+      const etaDate = new Date(Date.now() + minutesFromNow * 60 * 1000);
+      return etaDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '');
+    }
 
     // Map WMO Weather Codes to clear icons and labels
     function getWeatherVisuals(code, isDay) {
@@ -250,13 +250,14 @@
 
         if (predictions.length > 0) {
           const first = predictions[0];
+          const etaClock = formatEtaClock(first);
           countdownEl.textContent = first;
           countdownEl.className = 'primary-arrival' + (first <= 3 ? ' urgent' : '');
-          unitEl.textContent = first === 1 ? 'Minute Until Next Bus' : 'Minutes Until Next Bus';
+          unitEl.textContent = `${first} ${first === 1 ? 'min' : 'mins'} (${etaClock})`;
 
           if (predictions.length > 1) {
             nextEl.style.display = 'block';
-            nextEl.textContent = `Following buses in: ${predictions.slice(1).map(m => m + ' min').join(', ')}`;
+            nextEl.textContent = `Following: ${predictions.slice(1).map(m => `${m} mins (${formatEtaClock(m)})`).join(' • ')}`;
           } else {
             nextEl.style.display = 'none';
           }
@@ -292,7 +293,6 @@
         if (currentIndex >= totalEvents) {
           currentIndex = 0;
         }
-        // Each .cal-item is 3.3rem tall
         track.style.transform = `translateY(-${currentIndex * 3.3}rem)`;
       }, 5000);
     }
